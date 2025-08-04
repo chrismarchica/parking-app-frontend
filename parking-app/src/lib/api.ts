@@ -96,9 +96,9 @@ export const api = {
     return response.data;
   },
 
-  // Debug Data Status
+  // Data Status
   async getDataStatus(): Promise<DataStatus> {
-    const response: AxiosResponse<DataStatus> = await apiClient.get('/debug/data-status');
+    const response: AxiosResponse<DataStatus> = await apiClient.get('/data-status');
     return response.data;
   },
 };
