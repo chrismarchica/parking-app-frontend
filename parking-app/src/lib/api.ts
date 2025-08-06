@@ -214,6 +214,42 @@ export const apiUtils = {
   filterByRadius<T extends { distance: number }>(items: T[], maxRadius: number): T[] {
     return items.filter(item => item.distance <= maxRadius);
   },
+
+  // Format date from ISO string to M/D/YYYY format
+  formatLastUpdated(isoString: string): string {
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleDateString('en-US', {
+        month: 'numeric',
+        day: 'numeric',
+        year: 'numeric'
+      });
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'Unknown';
+    }
+  },
+
+  // Format date range from YYYY-MM-DD to YYYY-MM-DD to YYYY-MM-DD
+  formatDateRange(startDate: string, endDate: string): string {
+    try {
+      // Parse dates and format them consistently
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      
+      const formatDate = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      
+      return `${formatDate(start)} to ${formatDate(end)}`;
+    } catch (error) {
+      console.error('Error formatting date range:', error);
+      return `${startDate} to ${endDate}`;
+    }
+  },
 };
 
 // Export types for easy access

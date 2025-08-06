@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { NYCMap } from "@/components/map/nyc-map"
 import { AddressSearch } from "@/components/forms/address-search"
 import { CoordinateInput } from "@/components/forms/coordinate-input"
-import { api } from "@/lib/api"
+import { api, apiUtils } from "@/lib/api"
 import { MapLocation, MapMarker } from "@/lib/types"
 import { constants, urlUtils } from "@/lib/utils"
 
@@ -106,7 +106,7 @@ export default function Home() {
                 {dataStatus.parking_signs.total_count.toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground">
-                Last updated: {new Date(dataStatus.parking_signs.last_updated).toLocaleDateString()}
+                Last updated: {apiUtils.formatLastUpdated(dataStatus.parking_signs.last_updated)}
               </p>
             </CardContent>
           </Card>
@@ -122,7 +122,7 @@ export default function Home() {
                 {dataStatus.meter_rates.total_count.toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground">
-                Last updated: {new Date(dataStatus.meter_rates.last_updated).toLocaleDateString()}
+                Last updated: {apiUtils.formatLastUpdated(dataStatus.meter_rates.last_updated)}
               </p>
             </CardContent>
           </Card>
@@ -138,8 +138,10 @@ export default function Home() {
                 {dataStatus.violations.total_count.toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground">
-                {dataStatus.violations.date_range.start} to{" "}
-                {dataStatus.violations.date_range.end}
+                Date range: {apiUtils.formatDateRange(
+                  dataStatus.violations.date_range.start,
+                  dataStatus.violations.date_range.end
+                )}
               </p>
             </CardContent>
           </Card>
