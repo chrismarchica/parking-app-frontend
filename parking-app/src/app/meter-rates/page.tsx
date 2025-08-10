@@ -242,7 +242,7 @@ function MeterRatesContent() {
 
         {/* Map */}
         <div className="lg:col-span-2">
-          <Card className="h-full">
+          <Card className="h-full border-0 shadow-none">
             <CardContent className="p-0">
               <NYCMap
                 center={searchLocation}
@@ -250,7 +250,7 @@ function MeterRatesContent() {
                 markers={mapMarkers}
                 onLocationSelect={handleLocationSelect}
                 height="600px"
-                className="h-full rounded-lg"
+                className="h-full rounded-xl overflow-hidden"
               />
             </CardContent>
           </Card>

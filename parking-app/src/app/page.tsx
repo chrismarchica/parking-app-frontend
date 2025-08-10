@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { MapPin, Search, TrendingUp, AlertCircle } from "lucide-react"
+import { MapPin, Search, TrendingUp, AlertCircle, ArrowRight, Activity } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -158,14 +158,42 @@ export default function Home() {
   return (
     <div className="space-y-6">
       {/* Hero Section */}
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold tracking-tight nyc-text-gradient">
-          NYC Smart Parking
-        </h1>
-        <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Find parking signs, meter rates, and violation trends across New York City.
-          Get real-time information to make smarter parking decisions.
-        </p>
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-500 text-white">
+        {/* Decorative backdrop */}
+        <div className="pointer-events-none absolute -inset-40 opacity-30">
+          <div className="absolute left-1/2 top-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl bg-[radial-gradient(circle_at_center,theme(colors.white/30),transparent_60%)]" />
+        </div>
+        <div className="relative px-6 py-12 md:px-10 md:py-14 text-center">
+          <div className="mx-auto flex w-full max-w-fit items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-white/90 backdrop-blur">
+            <span className={`inline-flex items-center gap-1 ${healthData?.status === 'healthy' ? 'text-emerald-200' : 'text-amber-200'}`}>
+              <span className={`h-2 w-2 rounded-full ${healthData?.status === 'healthy' ? 'bg-emerald-300' : 'bg-amber-300'} animate-pulse`} />
+              {healthData?.status === 'healthy' ? 'Live data' : 'Degraded' }
+            </span>
+            <span className="text-white/30">•</span>
+            <span>NYC Smart Parking</span>
+          </div>
+          <h1 className="mt-3 text-4xl md:text-5xl font-extrabold tracking-tight nyc-text-gradient">
+            Make smarter parking decisions in NYC
+          </h1>
+          <p className="mt-3 text-base md:text-lg/7 max-w-3xl mx-auto text-blue-50">
+            Explore parking signs, meter rates, and violation trends on a fast, interactive map.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <Button asChild size="lg" className="shadow-lg">
+              <a href="/parking-signs" className="inline-flex items-center gap-2">
+                <MapPin className="h-5 w-5" />
+                Explore Parking Signs
+                <ArrowRight className="h-5 w-5" />
+              </a>
+            </Button>
+            <Button asChild variant="outline" size="lg" className="bg-white/10 border-white/30 text-white hover:bg-white/20">
+              <a href="/meter-rates" className="inline-flex items-center gap-2">
+                <Search className="h-5 w-5" />
+                Check Meter Rates
+              </a>
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Health Status Banner */}
@@ -186,49 +214,61 @@ export default function Home() {
       {/* Quick Stats */}
       {dataStatus && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+          <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-blue-50 to-blue-100/40 dark:from-slate-800 dark:to-slate-900">
+            <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-blue-500/10 blur-2xl" />
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-600/10 text-blue-600 dark:text-blue-400">
+                  <MapPin className="h-4 w-4" />
+                </span>
                 Parking Signs
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-3xl md:text-4xl font-extrabold nyc-text-gradient">
                 {dataStatus.parking_signs.total_count.toLocaleString()}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Last updated: {apiUtils.formatLastUpdated(dataStatus.parking_signs.last_updated)}
               </p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+          <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-emerald-50 to-emerald-100/40 dark:from-slate-800 dark:to-slate-900">
+            <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-emerald-500/10 blur-2xl" />
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600/10 text-emerald-600 dark:text-emerald-400">
+                  <Search className="h-4 w-4" />
+                </span>
                 Meter Rates
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-3xl md:text-4xl font-extrabold nyc-text-gradient">
                 {dataStatus.meter_rates.total_count.toLocaleString()}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Last updated: {apiUtils.formatLastUpdated(dataStatus.meter_rates.last_updated)}
               </p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+          <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-amber-50 to-amber-100/40 dark:from-slate-800 dark:to-slate-900">
+            <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-amber-500/10 blur-2xl" />
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-600/10 text-amber-600 dark:text-amber-400">
+                  <TrendingUp className="h-4 w-4" />
+                </span>
                 Violations
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-3xl md:text-4xl font-extrabold nyc-text-gradient">
                 {dataStatus.violations.total_count.toLocaleString()}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Date range: {apiUtils.formatDateRange(
                   dataStatus.violations.date_range.start,
                   dataStatus.violations.date_range.end
@@ -358,7 +398,7 @@ export default function Home() {
 
         {/* Map */}
         <div className="lg:col-span-2">
-          <Card className="h-full">
+          <Card className="h-full border-0 shadow-none">
             <CardContent className="p-0">
               <NYCMap
                 center={selectedLocation}
@@ -367,7 +407,7 @@ export default function Home() {
                 onLocationSelect={handleLocationSelect}
                 height="600px"
                 searchRadius={searchRadius}
-                className="h-full rounded-lg"
+                className="h-full rounded-xl overflow-hidden"
               />
             </CardContent>
           </Card>

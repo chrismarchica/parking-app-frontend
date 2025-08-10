@@ -2,6 +2,8 @@
 
 import * as React from "react"
 import Map, { NavigationControl, GeolocateControl, Marker, Popup, Source, Layer } from "react-map-gl"
+import { api } from "@/lib/api"
+import { Borough } from "@/lib/types"
 import { MapPinOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -48,6 +50,8 @@ export function NYCMap({
     title?: string
     content?: string
   } | null>(null)
+  const [violationLoading, setViolationLoading] = React.useState(false)
+  const [violationError, setViolationError] = React.useState<string | null>(null)
   const [mapCursor, setMapCursor] = React.useState<string>('')
 
   // Update viewport when center changes
@@ -143,7 +147,7 @@ export function NYCMap({
       <Map
         {...viewport}
         onMove={evt => setViewport(evt.viewState)}
-        onClick={(evt) => {
+        onClick={async (evt) => {
           // Handle clicks on violation layer first
           const feature = evt.features?.find(f => f.layer?.id === VIOLATION_LAYER_ID)
           if (feature && feature.geometry.type === 'Point') {
@@ -155,6 +159,32 @@ export function NYCMap({
               title: typeof props?.title === 'string' ? props.title : 'Violations',
               content: typeof props?.content === 'string' ? props.content : undefined,
             })
+            const boroughRaw = typeof props?.borough === 'string' ? props.borough : undefined
+            if (boroughRaw) {
+              try {
+                setViolationLoading(true)
+                setViolationError(null)
+                const year = new Date().getFullYear() - 1
+                const trends = await api.getViolationTrends({ borough: boroughRaw as Borough, year })
+                if (Array.isArray(trends) && trends.length > 0) {
+                  const total = trends.reduce((s, t) => s + t.count, 0)
+                  const byType = new Map<string, number>()
+                  for (const t of trends) {
+                    byType.set(t.violation_type, (byType.get(t.violation_type) || 0) + t.count)
+                  }
+                  const top = [...byType.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+                  const topLines = top.map(([type, count]) => `${type}: ${count.toLocaleString()}`)
+                  setViolationPopup(prev => prev && {
+                    ...prev,
+                    content: `Total: ${total.toLocaleString()}\n${topLines.join('\n')}`,
+                  })
+                }
+              } catch (err) {
+                setViolationError('Failed to load details')
+              } finally {
+                setViolationLoading(false)
+              }
+            }
             return
           }
           handleMapClick(evt as any)
@@ -236,13 +266,14 @@ export function NYCMap({
             anchor={(marker.type === 'violation' || marker.type === 'search_center') ? 'center' : 'bottom'}
           >
             <Button
-              variant="ghost"
+              aria-label={`Map marker - ${marker.type}`}
+              variant="default"
               size="icon"
-              className="h-8 w-8 rounded-full bg-white shadow-lg hover:scale-110 transition-transform"
+              className="h-10 w-10 rounded-full shadow-xl border border-white/60 ring-2 ring-white/70 hover:scale-110 transition-transform"
               style={{ backgroundColor: getMarkerColor(marker.type) }}
               onClick={() => handleMarkerClick(marker)}
             >
-              <span className="text-white text-xs">
+              <span className="text-white text-base leading-none">
                 {getMarkerIcon(marker.type)}
               </span>
             </Button>
@@ -261,7 +292,7 @@ export function NYCMap({
             features: violationMarkers.map(m => ({
               type: 'Feature',
               geometry: { type: 'Point', coordinates: [m.longitude, m.latitude] },
-              properties: { id: `${m.id}`, title: m.popup?.title || '', content: m.popup?.content || '' },
+              properties: { id: `${m.id}`, title: m.popup?.title || '', content: m.popup?.content || '', borough: `${m.id}`.replace('violation-', '') },
             })),
           } as const
 
@@ -297,8 +328,14 @@ export function NYCMap({
           >
             <div className="p-2">
               <h4 className="font-semibold text-sm mb-1">{violationPopup.title}</h4>
-              {violationPopup.content && (
-                <p className="text-xs text-muted-foreground">{violationPopup.content}</p>
+              {violationLoading ? (
+                <p className="text-xs text-muted-foreground">Loading...</p>
+              ) : violationError ? (
+                <p className="text-xs text-destructive">{violationError}</p>
+              ) : violationPopup.content ? (
+                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{violationPopup.content}</pre>
+              ) : (
+                <p className="text-xs text-muted-foreground">No details available</p>
               )}
             </div>
           </Popup>
