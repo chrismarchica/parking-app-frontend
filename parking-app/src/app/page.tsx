@@ -10,13 +10,13 @@ import { NYCMap } from "@/components/map/nyc-map"
 import { AddressSearch } from "@/components/forms/address-search"
 import { CoordinateInput } from "@/components/forms/coordinate-input"
 import { api, apiUtils } from "@/lib/api"
-import { MapLocation, MapMarker } from "@/lib/types"
+import { MapLocation, MapMarker, Borough, NYC_BOROUGHS, ParkingSign, MeterRate } from "@/lib/types"
 import { constants, urlUtils } from "@/lib/utils"
 
 export default function Home() {
   const [selectedLocation, setSelectedLocation] = React.useState<MapLocation>(constants.NYC_CENTER)
   const [searchRadius, setSearchRadius] = React.useState(500)
-  const [mapMarkers, setMapMarkers] = React.useState<MapMarker[]>([])
+  // Map markers are derived from fetched data
   const [showCoordinateInput, setShowCoordinateInput] = React.useState(false)
 
   // Health check query
@@ -45,21 +45,112 @@ export default function Home() {
   // Handle location selection
   const handleLocationSelect = React.useCallback((location: MapLocation) => {
     setSelectedLocation(location)
-    
-    // Add search center marker
-    const searchMarker: MapMarker = {
-      id: 'search-center',
-      latitude: location.latitude,
-      longitude: location.longitude,
-      type: 'search_center',
-      popup: {
-        title: 'Search Center',
-        content: `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`,
-      },
-    }
-    
-    setMapMarkers([searchMarker])
   }, [])
+
+  // Fetch parking signs near the selected location
+  const { data: parkingSignsData } = useQuery<ParkingSign[]>({
+    queryKey: ['home-parking-signs', selectedLocation.latitude, selectedLocation.longitude, searchRadius],
+    queryFn: () => api.getParkingSigns({
+      lat: selectedLocation.latitude,
+      lon: selectedLocation.longitude,
+      radius: searchRadius,
+    }),
+    enabled: apiUtils.isValidCoordinate(selectedLocation.latitude, selectedLocation.longitude),
+    staleTime: 5 * 60 * 1000,
+  })
+  const parkingSigns: ParkingSign[] = Array.isArray(parkingSignsData) ? parkingSignsData : []
+
+  // Fetch nearest meter for the selected location
+  const { data: meterRate } = useQuery<MeterRate | undefined>({
+    queryKey: ['home-meter-rate', selectedLocation.latitude, selectedLocation.longitude],
+    queryFn: () => api.getMeterRate({
+      lat: selectedLocation.latitude,
+      lon: selectedLocation.longitude,
+    }),
+    enabled: apiUtils.isValidCoordinate(selectedLocation.latitude, selectedLocation.longitude),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Derive map markers from fetched data
+  const mapMarkers: MapMarker[] = React.useMemo(() => {
+    const markers: MapMarker[] = [
+      {
+        id: 'search-center',
+        latitude: selectedLocation.latitude,
+        longitude: selectedLocation.longitude,
+        type: 'search_center',
+        popup: {
+          title: 'Search Center',
+          content: `${selectedLocation.latitude.toFixed(4)}, ${selectedLocation.longitude.toFixed(4)}`,
+        },
+      },
+    ]
+
+    // Add parking sign markers (robust to non-array responses)
+    const signsArray = Array.isArray(parkingSigns) ? parkingSigns : []
+    signsArray.forEach(sign => {
+      markers.push({
+        id: sign.id,
+        latitude: sign.latitude,
+        longitude: sign.longitude,
+        type: 'parking_sign',
+        data: sign,
+        popup: {
+          title: sign.street_name || 'Parking Sign',
+          content: `${sign.description}`,
+        },
+      })
+    })
+
+    // Add meter marker
+    if (meterRate) {
+      markers.push({
+        id: meterRate.id,
+        latitude: meterRate.latitude,
+        longitude: meterRate.longitude,
+        type: 'meter',
+        data: meterRate,
+        popup: {
+          title: `Meter - ${meterRate.street_name}`,
+          content: `${apiUtils.formatDistance(meterRate.distance)} away - ${meterRate.status}`,
+        },
+      })
+    }
+
+    // Add borough-level violation "heat" markers (using totals by borough)
+    // Fetch latest year and plot at approximate borough centroids
+    const currentYear = new Date().getFullYear() - 1
+    const boroughCentroids: Record<Borough, { lat: number; lon: number; label: string }> = {
+      manhattan: { lat: 40.7831, lon: -73.9712, label: 'Manhattan' },
+      brooklyn: { lat: 40.6782, lon: -73.9442, label: 'Brooklyn' },
+      queens: { lat: 40.7282, lon: -73.7949, label: 'Queens' },
+      bronx: { lat: 40.8448, lon: -73.8648, label: 'Bronx' },
+      staten_island: { lat: 40.5795, lon: -74.1502, label: 'Staten Island' },
+    }
+
+    // Note: We don't have per-violation-point API, so we visualize borough totals
+    // We rely on cached queries from the Violation Trends page; otherwise, skip.
+    // This keeps the home page snappy.
+
+    // Create a simple helper to attach violation summary from query cache if available
+    // We avoid an extra request burst from home by not fetching here.
+    // Instead, just render centroids without counts.
+    NYC_BOROUGHS.forEach((borough) => {
+      const c = boroughCentroids[borough]
+      markers.push({
+        id: `violation-${borough}`,
+        latitude: c.lat,
+        longitude: c.lon,
+        type: 'violation',
+        popup: {
+          title: `${c.label} Violations`,
+          content: `Latest totals by type (${currentYear}). Open Violation Trends for details.`,
+        },
+      })
+    })
+
+    return markers
+  }, [selectedLocation, parkingSigns, meterRate])
 
   const isHealthy = healthData?.status === 'healthy'
   const hasError = !!healthError

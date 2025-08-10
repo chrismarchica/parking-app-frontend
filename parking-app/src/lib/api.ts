@@ -63,14 +63,52 @@ export const api = {
 
   // Parking Signs
   async getParkingSigns(params: ParkingSignsRequest): Promise<ParkingSign[]> {
-    const response: AxiosResponse<ParkingSign[]> = await apiClient.get('/parking-signs', {
+    const response: AxiosResponse<any> = await apiClient.get('/parking-signs', {
       params: {
         lat: params.lat,
         lon: params.lon,
         radius: params.radius,
       },
     });
-    return response.data;
+
+    const raw = response.data;
+    const list: any[] = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.results)
+      ? raw.results
+      : Array.isArray(raw?.data)
+      ? raw.data
+      : Array.isArray(raw?.parking_signs)
+      ? raw.parking_signs
+      : Array.isArray(raw?.signs)
+      ? raw.signs
+      : [];
+
+    return list.map((item: any, index: number): ParkingSign => {
+      const latitude = Number(item.latitude ?? item.lat);
+      const longitude = Number(item.longitude ?? item.lon);
+      const distance = Number(item.distance ?? item.dist ?? 0);
+      const street_name = String(item.street_name ?? item.street ?? '');
+      const description = String(
+        item.description ??
+        (Array.isArray(item.regulations) ? item.regulations.join(' ') : '') ??
+        ''
+      );
+
+      return {
+        id: String(item.id ?? item.sign_id ?? `${latitude},${longitude},${index}`),
+        latitude,
+        longitude,
+        distance,
+        description,
+        street_name,
+        sign_type: item.sign_type,
+        regulations: Array.isArray(item.regulations) ? item.regulations : undefined,
+        borough: item.borough,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+      } as ParkingSign;
+    });
   },
 
   // Meter Rates

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import Map, { NavigationControl, GeolocateControl, Marker, Popup } from "react-map-gl"
+import Map, { NavigationControl, GeolocateControl, Marker, Popup, Source, Layer } from "react-map-gl"
 import { MapPinOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -42,6 +42,13 @@ export function NYCMap({
   const [selectedMarker, setSelectedMarker] = React.useState<MapMarker | null>(null)
   const [userLocation, setUserLocation] = React.useState<MapLocation | null>(null)
   const [mapLoading, setMapLoading] = React.useState(true)
+  const [violationPopup, setViolationPopup] = React.useState<{
+    longitude: number
+    latitude: number
+    title?: string
+    content?: string
+  } | null>(null)
+  const [mapCursor, setMapCursor] = React.useState<string>('')
 
   // Update viewport when center changes
   React.useEffect(() => {
@@ -88,6 +95,8 @@ export function NYCMap({
         return '#22c55e' // green
       case 'search_center':
         return '#3b82f6' // blue
+      case 'violation':
+        return '#a855f7' // violet
       default:
         return '#6b7280' // gray
     }
@@ -101,6 +110,8 @@ export function NYCMap({
         return '🅿️'
       case 'search_center':
         return '📍'
+      case 'violation':
+        return '⚠️'
       default:
         return '📍'
     }
@@ -125,18 +136,41 @@ export function NYCMap({
     )
   }
 
+  const VIOLATION_LAYER_ID = 'violation-points'
+
   return (
     <div className={className} style={{ height, position: 'relative' }}>
       <Map
         {...viewport}
         onMove={evt => setViewport(evt.viewState)}
-        onClick={handleMapClick}
+        onClick={(evt) => {
+          // Handle clicks on violation layer first
+          const feature = evt.features?.find(f => f.layer?.id === VIOLATION_LAYER_ID)
+          if (feature && feature.geometry.type === 'Point') {
+            const [lon, lat] = feature.geometry.coordinates as [number, number]
+            const props = feature.properties as Record<string, unknown> | undefined
+            setViolationPopup({
+              longitude: lon,
+              latitude: lat,
+              title: typeof props?.title === 'string' ? props.title : 'Violations',
+              content: typeof props?.content === 'string' ? props.content : undefined,
+            })
+            return
+          }
+          handleMapClick(evt as any)
+        }}
+        onMouseMove={(evt) => {
+          const overViolation = !!evt.features?.find(f => f.layer?.id === VIOLATION_LAYER_ID)
+          setMapCursor(overViolation ? 'pointer' : '')
+        }}
         onLoad={() => setMapLoading(false)}
         mapboxAccessToken={mapboxToken}
         mapStyle="mapbox://styles/mapbox/streets-v12"
         attributionControl={false}
         style={{ width: '100%', height: '100%', borderRadius: '0.5rem' }}
         interactive={interactive}
+        interactiveLayerIds={[VIOLATION_LAYER_ID]}
+        cursor={mapCursor}
       >
         {/* Controls */}
         {showControls && (
@@ -150,23 +184,30 @@ export function NYCMap({
           </>
         )}
 
-        {/* Search radius circle */}
-        {searchRadius && (
-          <div
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: '50%',
-              width: `${searchRadius * 2}px`,
-              height: `${searchRadius * 2}px`,
-              marginLeft: `-${searchRadius}px`,
-              marginTop: `-${searchRadius}px`,
-              border: '2px solid #3b82f6',
-              borderRadius: '50%',
-              backgroundColor: 'rgba(59, 130, 246, 0.1)',
-              pointerEvents: 'none',
-            }}
-          />
+        {/* Search radius circle (meters → pixels based on zoom/latitude) */}
+        {typeof searchRadius === 'number' && searchRadius > 0 && (
+          (() => {
+            const metersPerPixel = 156543.03392 * Math.cos(viewport.latitude * Math.PI / 180) / Math.pow(2, viewport.zoom)
+            const pixelRadius = Math.max(8, Math.round(searchRadius / metersPerPixel))
+            const diameter = pixelRadius * 2
+            return (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  width: `${diameter}px`,
+                  height: `${diameter}px`,
+                  marginLeft: `-${pixelRadius}px`,
+                  marginTop: `-${pixelRadius}px`,
+                  border: '2px solid #3b82f6',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                  pointerEvents: 'none',
+                }}
+              />
+            )
+          })()
         )}
 
         {/* User location marker */}
@@ -183,13 +224,16 @@ export function NYCMap({
           </Marker>
         )}
 
-        {/* Markers */}
-        {markers.map((marker) => (
+        {/* Markers (HTML) - exclude violation markers; they will be rendered via Mapbox layers */}
+        {(markers || [])
+          .filter(m => m.type !== 'violation')
+          .filter(m => Number.isFinite(m.latitude) && Number.isFinite(m.longitude))
+          .map((marker) => (
           <Marker
-            key={marker.id}
+            key={`${marker.type}-${marker.id}`}
             latitude={marker.latitude}
             longitude={marker.longitude}
-            anchor="bottom"
+            anchor={(marker.type === 'violation' || marker.type === 'search_center') ? 'center' : 'bottom'}
           >
             <Button
               variant="ghost"
@@ -204,6 +248,61 @@ export function NYCMap({
             </Button>
           </Marker>
         ))}
+
+        {/* Violation markers rendered as a vector layer to avoid any DOM anchoring drift */}
+        {(() => {
+          const violationMarkers = (markers || [])
+            .filter(m => m.type === 'violation')
+            .filter(m => Number.isFinite(m.latitude) && Number.isFinite(m.longitude))
+          if (violationMarkers.length === 0) return null
+
+          const geojson = {
+            type: 'FeatureCollection',
+            features: violationMarkers.map(m => ({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [m.longitude, m.latitude] },
+              properties: { id: `${m.id}`, title: m.popup?.title || '', content: m.popup?.content || '' },
+            })),
+          } as const
+
+          const circleLayer: any = {
+            id: VIOLATION_LAYER_ID,
+            type: 'circle',
+            paint: {
+              'circle-radius': 6,
+              'circle-color': '#a855f7',
+              'circle-stroke-color': '#ffffff',
+              'circle-stroke-width': 1.5,
+              'circle-opacity': 0.9,
+            },
+          }
+
+          return (
+            <Source id="violations-source" type="geojson" data={geojson}>
+              <Layer {...circleLayer} />
+            </Source>
+          )
+        })()}
+
+        {/* Popup for violation feature */}
+        {violationPopup && (
+          <Popup
+            longitude={violationPopup.longitude}
+            latitude={violationPopup.latitude}
+            onClose={() => setViolationPopup(null)}
+            closeButton={true}
+            closeOnClick={false}
+            anchor="top"
+            offset={10}
+          >
+            <div className="p-2">
+              <h4 className="font-semibold text-sm mb-1">{violationPopup.title}</h4>
+              {violationPopup.content && (
+                <p className="text-xs text-muted-foreground">{violationPopup.content}</p>
+              )}
+            </div>
+          </Popup>
+        )}
 
         {/* Popup for selected marker */}
         {selectedMarker && selectedMarker.popup && (

@@ -171,7 +171,7 @@ export interface MapMarker {
   id: string;
   latitude: number;
   longitude: number;
-  type: 'parking_sign' | 'meter' | 'search_center';
+  type: 'parking_sign' | 'meter' | 'search_center' | 'violation';
   data?: ParkingSign | MeterRate;
   popup?: {
     title: string;
