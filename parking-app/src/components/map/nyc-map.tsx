@@ -168,18 +168,18 @@ export function NYCMap({
                 const trends = await api.getViolationTrends({ borough: boroughRaw as Borough, year })
                 if (Array.isArray(trends) && trends.length > 0) {
                   const total = trends.reduce((s, t) => s + t.count, 0)
-                  const byType = new Map<string, number>()
+                  const byType: Record<string, number> = {}
                   for (const t of trends) {
-                    byType.set(t.violation_type, (byType.get(t.violation_type) || 0) + t.count)
+                    byType[t.violation_type] = (byType[t.violation_type] || 0) + t.count
                   }
-                  const top = [...byType.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+                  const top = Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 3)
                   const topLines = top.map(([type, count]) => `${type}: ${count.toLocaleString()}`)
                   setViolationPopup(prev => prev && {
                     ...prev,
                     content: `Total: ${total.toLocaleString()}\n${topLines.join('\n')}`,
                   })
                 }
-              } catch (err) {
+              } catch {
                 setViolationError('Failed to load details')
               } finally {
                 setViolationLoading(false)
@@ -187,7 +187,7 @@ export function NYCMap({
             }
             return
           }
-          handleMapClick(evt as any)
+          handleMapClick(evt)
         }}
         onMouseMove={(evt) => {
           const overViolation = !!evt.features?.find(f => f.layer?.id === VIOLATION_LAYER_ID)
@@ -296,9 +296,9 @@ export function NYCMap({
             })),
           } as const
 
-          const circleLayer: any = {
+          const circleLayer = {
             id: VIOLATION_LAYER_ID,
-            type: 'circle',
+            type: 'circle' as const,
             paint: {
               'circle-radius': 6,
               'circle-color': '#a855f7',

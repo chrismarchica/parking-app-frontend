@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { MapPin, Search, TrendingUp, AlertCircle, ArrowRight, Activity } from "lucide-react"
+import { MapPin, Search, TrendingUp, AlertCircle, ArrowRight } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -58,7 +58,10 @@ export default function Home() {
     enabled: apiUtils.isValidCoordinate(selectedLocation.latitude, selectedLocation.longitude),
     staleTime: 5 * 60 * 1000,
   })
-  const parkingSigns: ParkingSign[] = Array.isArray(parkingSignsData) ? parkingSignsData : []
+  const parkingSigns: ParkingSign[] = React.useMemo(() => 
+    Array.isArray(parkingSignsData) ? parkingSignsData : [], 
+    [parkingSignsData]
+  )
 
   // Fetch nearest meter for the selected location
   const { data: meterRate } = useQuery<MeterRate | undefined>({

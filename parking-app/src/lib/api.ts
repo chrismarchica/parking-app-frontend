@@ -63,7 +63,7 @@ export const api = {
 
   // Parking Signs
   async getParkingSigns(params: ParkingSignsRequest): Promise<ParkingSign[]> {
-    const response: AxiosResponse<any> = await apiClient.get('/parking-signs', {
+    const response: AxiosResponse<unknown> = await apiClient.get('/parking-signs', {
       params: {
         lat: params.lat,
         lon: params.lon,
@@ -71,42 +71,71 @@ export const api = {
       },
     });
 
+    // Type guard for API response structure
+    interface ApiResponse {
+      results?: unknown[];
+      data?: unknown[];
+      parking_signs?: unknown[];
+      signs?: unknown[];
+    }
+
     const raw = response.data;
-    const list: any[] = Array.isArray(raw)
+    const list: unknown[] = Array.isArray(raw)
       ? raw
-      : Array.isArray(raw?.results)
-      ? raw.results
-      : Array.isArray(raw?.data)
-      ? raw.data
-      : Array.isArray(raw?.parking_signs)
-      ? raw.parking_signs
-      : Array.isArray(raw?.signs)
-      ? raw.signs
+      : (raw && typeof raw === 'object' && Array.isArray((raw as ApiResponse).results))
+      ? (raw as ApiResponse).results!
+      : (raw && typeof raw === 'object' && Array.isArray((raw as ApiResponse).data))
+      ? (raw as ApiResponse).data!
+      : (raw && typeof raw === 'object' && Array.isArray((raw as ApiResponse).parking_signs))
+      ? (raw as ApiResponse).parking_signs!
+      : (raw && typeof raw === 'object' && Array.isArray((raw as ApiResponse).signs))
+      ? (raw as ApiResponse).signs!
       : [];
 
-    return list.map((item: any, index: number): ParkingSign => {
-      const latitude = Number(item.latitude ?? item.lat);
-      const longitude = Number(item.longitude ?? item.lon);
-      const distance = Number(item.distance ?? item.dist ?? 0);
-      const street_name = String(item.street_name ?? item.street ?? '');
+    return list.map((item: unknown, index: number): ParkingSign => {
+      // Type guard for parking sign item
+      interface ParkingSignItem {
+        id?: string;
+        sign_id?: string;
+        latitude?: number;
+        lat?: number;
+        longitude?: number;
+        lon?: number;
+        distance?: number;
+        dist?: number;
+        street_name?: string;
+        street?: string;
+        description?: string;
+        sign_type?: string;
+        regulations?: string[];
+        borough?: string;
+        created_at?: string;
+        updated_at?: string;
+      }
+      
+      const itemObj = item as ParkingSignItem;
+      const latitude = Number(itemObj.latitude ?? itemObj.lat);
+      const longitude = Number(itemObj.longitude ?? itemObj.lon);
+      const distance = Number(itemObj.distance ?? itemObj.dist ?? 0);
+      const street_name = String(itemObj.street_name ?? itemObj.street ?? '');
       const description = String(
-        item.description ??
-        (Array.isArray(item.regulations) ? item.regulations.join(' ') : '') ??
+        itemObj.description ??
+        (Array.isArray(itemObj.regulations) ? itemObj.regulations.join(' ') : '') ??
         ''
       );
 
       return {
-        id: String(item.id ?? item.sign_id ?? `${latitude},${longitude},${index}`),
+        id: String(itemObj.id ?? itemObj.sign_id ?? `${latitude},${longitude},${index}`),
         latitude,
         longitude,
         distance,
         description,
         street_name,
-        sign_type: item.sign_type,
-        regulations: Array.isArray(item.regulations) ? item.regulations : undefined,
-        borough: item.borough,
-        created_at: item.created_at,
-        updated_at: item.updated_at,
+        sign_type: itemObj.sign_type,
+        regulations: Array.isArray(itemObj.regulations) ? itemObj.regulations : undefined,
+        borough: itemObj.borough,
+        created_at: itemObj.created_at,
+        updated_at: itemObj.updated_at,
       } as ParkingSign;
     });
   },

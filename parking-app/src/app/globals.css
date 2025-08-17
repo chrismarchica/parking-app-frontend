@@ -59,10 +59,86 @@
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: hsl(var(--border));
   }
   body {
-    @apply bg-background text-foreground;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+}
+
+@layer utilities {
+  .bg-background {
+    background-color: hsl(var(--background));
+  }
+  .bg-background\/80 {
+    background-color: hsl(var(--background) / 0.8);
+  }
+  .bg-background\/95 {
+    background-color: hsl(var(--background) / 0.95);
+  }
+  .bg-background\/60 {
+    background-color: hsl(var(--background) / 0.6);
+  }
+  .text-foreground {
+    color: hsl(var(--foreground));
+  }
+  .text-muted-foreground {
+    color: hsl(var(--muted-foreground));
+  }
+  .border-border {
+    border-color: hsl(var(--border));
+  }
+  .border-input {
+    border-color: hsl(var(--input));
+  }
+  .bg-primary {
+    background-color: hsl(var(--primary));
+  }
+  .text-primary-foreground {
+    color: hsl(var(--primary-foreground));
+  }
+  .bg-secondary {
+    background-color: hsl(var(--secondary));
+  }
+  .text-secondary-foreground {
+    color: hsl(var(--secondary-foreground));
+  }
+  .bg-muted {
+    background-color: hsl(var(--muted));
+  }
+  .text-muted-foreground {
+    color: hsl(var(--muted-foreground));
+  }
+  .bg-accent {
+    background-color: hsl(var(--accent));
+  }
+  .text-accent-foreground {
+    color: hsl(var(--accent-foreground));
+  }
+  .bg-destructive {
+    background-color: hsl(var(--destructive));
+  }
+  .text-destructive-foreground {
+    color: hsl(var(--destructive-foreground));
+  }
+  .bg-card {
+    background-color: hsl(var(--card));
+  }
+  .text-card-foreground {
+    color: hsl(var(--card-foreground));
+  }
+  .bg-popover {
+    background-color: hsl(var(--popover));
+  }
+  .text-popover-foreground {
+    color: hsl(var(--popover-foreground));
+  }
+  .ring-ring {
+    --tw-ring-color: hsl(var(--ring));
+  }
+  .ring-offset-background {
+    --tw-ring-offset-color: hsl(var(--background));
   }
 }
 
@@ -88,12 +164,16 @@
 }
 
 .mapboxgl-popup-content {
-  @apply rounded-lg border bg-card text-card-foreground shadow-lg;
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--border));
+  background-color: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   padding: 1rem;
 }
 
 .mapboxgl-popup-close-button {
-  @apply text-muted-foreground hover:text-foreground;
+  color: hsl(var(--muted-foreground));
   font-size: 1.2rem;
   padding: 0.25rem;
 }
@@ -115,13 +195,14 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  @apply bg-muted;
+  background-color: hsl(var(--muted));
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  @apply bg-muted-foreground/30 rounded-full;
+  background-color: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 9999px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  @apply bg-muted-foreground/50;
+  background-color: hsl(var(--muted-foreground) / 0.5);
 }
