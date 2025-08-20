@@ -148,7 +148,29 @@ export function NYCMap({
         {...viewport}
         onMove={evt => setViewport(evt.viewState)}
         onClick={async (evt) => {
-          // Handle clicks on violation layer first
+          // Handle clicks on cluster layer first (zoom in on clusters)
+          const clusterFeature = evt.features?.find(f => f.layer?.id === 'violation-clusters')
+          if (clusterFeature && clusterFeature.geometry.type === 'Point') {
+            const [longitude, latitude] = clusterFeature.geometry.coordinates as [number, number]
+            const clusterId = clusterFeature.properties?.cluster_id
+            const source = evt.target.getSource('violations-source')
+            
+            if (source && source.getClusterExpansionZoom && clusterId !== undefined) {
+              source.getClusterExpansionZoom(clusterId, (err: Error | null, zoom: number) => {
+                if (err) return
+                
+                setViewport(prev => ({
+                  ...prev,
+                  longitude,
+                  latitude,
+                  zoom: Math.min(zoom, 16), // Cap zoom level
+                }))
+              })
+            }
+            return
+          }
+
+          // Handle clicks on individual violation markers
           const feature = evt.features?.find(f => f.layer?.id === VIOLATION_LAYER_ID)
           if (feature && feature.geometry.type === 'Point') {
             const [lon, lat] = feature.geometry.coordinates as [number, number]
@@ -156,41 +178,29 @@ export function NYCMap({
             setViolationPopup({
               longitude: lon,
               latitude: lat,
-              title: typeof props?.title === 'string' ? props.title : 'Violations',
+              title: typeof props?.title === 'string' ? props.title : 'Violation',
               content: typeof props?.content === 'string' ? props.content : undefined,
             })
-            const boroughRaw = typeof props?.borough === 'string' ? props.borough : undefined
-            if (boroughRaw) {
-              try {
-                setViolationLoading(true)
-                setViolationError(null)
-                const year = new Date().getFullYear() - 1
-                const trends = await api.getViolationTrends({ borough: boroughRaw as Borough, year })
-                if (Array.isArray(trends) && trends.length > 0) {
-                  const total = trends.reduce((s, t) => s + t.count, 0)
-                  const byType: Record<string, number> = {}
-                  for (const t of trends) {
-                    byType[t.violation_type] = (byType[t.violation_type] || 0) + t.count
-                  }
-                  const top = Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 3)
-                  const topLines = top.map(([type, count]) => `${type}: ${count.toLocaleString()}`)
-                  setViolationPopup(prev => prev && {
-                    ...prev,
-                    content: `Total: ${total.toLocaleString()}\n${topLines.join('\n')}`,
-                  })
-                }
-              } catch {
-                setViolationError('Failed to load details')
-              } finally {
-                setViolationLoading(false)
-              }
+            
+            // Enhanced content with fine amount and violation type
+            if (props?.fine_amount && props?.violation_type) {
+              const fineAmount = typeof props.fine_amount === 'number' ? props.fine_amount : 0
+              const violationType = typeof props.violation_type === 'string' ? props.violation_type : ''
+              const existingContent = typeof props?.content === 'string' ? props.content : ''
+              
+              setViolationPopup(prev => prev && {
+                ...prev,
+                content: existingContent || `Fine: $${fineAmount}\nType: ${violationType}`,
+              })
             }
             return
           }
           handleMapClick(evt)
         }}
         onMouseMove={(evt) => {
-          const overViolation = !!evt.features?.find(f => f.layer?.id === VIOLATION_LAYER_ID)
+          const overViolation = !!evt.features?.find(f => 
+            f.layer?.id === VIOLATION_LAYER_ID || f.layer?.id === 'violation-clusters'
+          )
           setMapCursor(overViolation ? 'pointer' : '')
         }}
         onLoad={() => setMapLoading(false)}
@@ -199,7 +209,7 @@ export function NYCMap({
         attributionControl={false}
         style={{ width: '100%', height: '100%', borderRadius: '0.5rem' }}
         interactive={interactive}
-        interactiveLayerIds={[VIOLATION_LAYER_ID]}
+        interactiveLayerIds={[VIOLATION_LAYER_ID, 'violation-clusters', 'violation-cluster-count']}
         cursor={mapCursor}
       >
         {/* Controls */}
@@ -280,36 +290,112 @@ export function NYCMap({
           </Marker>
         ))}
 
-        {/* Violation markers rendered as a vector layer to avoid any DOM anchoring drift */}
+        {/* Violation markers rendered as a vector layer with clustering for performance */}
         {(() => {
           const violationMarkers = (markers || [])
             .filter(m => m.type === 'violation')
             .filter(m => Number.isFinite(m.latitude) && Number.isFinite(m.longitude))
           if (violationMarkers.length === 0) return null
 
+          // Create geojson with clustering data
           const geojson = {
             type: 'FeatureCollection',
-            features: violationMarkers.map(m => ({
+            features: violationMarkers.map((m, index) => ({
               type: 'Feature',
               geometry: { type: 'Point', coordinates: [m.longitude, m.latitude] },
-              properties: { id: `${m.id}`, title: m.popup?.title || '', content: m.popup?.content || '', borough: `${m.id}`.replace('violation-', '') },
+              properties: { 
+                id: `${m.id}`,
+                title: m.popup?.title || '',
+                content: m.popup?.content || '',
+                borough: `${m.id}`.replace('violation-', ''),
+                index,
+                // Add violation-specific data for clustering
+                violation_type: m.data?.violation_type || '',
+                fine_amount: m.data?.fine_amount || 0,
+              },
             })),
           } as const
 
+          // Base circle layer for individual violations
           const circleLayer = {
             id: VIOLATION_LAYER_ID,
             type: 'circle' as const,
+            filter: ['!', ['has', 'point_count']], // Only show unclustered points
             paint: {
-              'circle-radius': 6,
-              'circle-color': '#a855f7',
+              'circle-radius': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                10, 4,
+                15, 6,
+                20, 8
+              ],
+              'circle-color': [
+                'case',
+                ['>', ['get', 'fine_amount'], 200], '#dc2626', // red for high fines
+                ['>', ['get', 'fine_amount'], 100], '#ea580c', // orange for medium fines
+                '#a855f7' // purple for low fines
+              ],
               'circle-stroke-color': '#ffffff',
               'circle-stroke-width': 1.5,
-              'circle-opacity': 0.9,
+              'circle-opacity': 0.8,
+            },
+          }
+
+          // Cluster layer for grouped violations
+          const clusterLayer = {
+            id: 'violation-clusters',
+            type: 'circle' as const,
+            filter: ['has', 'point_count'],
+            paint: {
+              'circle-radius': [
+                'step',
+                ['get', 'point_count'],
+                15,
+                10, 20,
+                50, 25,
+                100, 30
+              ],
+              'circle-color': [
+                'step',
+                ['get', 'point_count'],
+                '#fed7d7',
+                10, '#fc8181',
+                50, '#f56565',
+                100, '#e53e3e'
+              ],
+              'circle-stroke-color': '#ffffff',
+              'circle-stroke-width': 2,
+              'circle-opacity': 0.8,
+            },
+          }
+
+          // Cluster count labels
+          const clusterCountLayer = {
+            id: 'violation-cluster-count',
+            type: 'symbol' as const,
+            filter: ['has', 'point_count'],
+            layout: {
+              'text-field': '{point_count_abbreviated}',
+              'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+              'text-size': 12,
+            },
+            paint: {
+              'text-color': '#ffffff',
             },
           }
 
           return (
-            <Source id="violations-source" type="geojson" data={geojson}>
+            <Source 
+              id="violations-source" 
+              type="geojson" 
+              data={geojson}
+              cluster={true}
+              clusterMaxZoom={14}
+              clusterRadius={50}
+            >
+              <Layer {...clusterLayer} />
+              <Layer {...clusterCountLayer} />
               <Layer {...circleLayer} />
             </Source>
           )

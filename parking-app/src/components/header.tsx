@@ -14,6 +14,7 @@ const navigation = [
   { name: "Parking Signs", href: "/parking-signs" },
   { name: "Meter Rates", href: "/meter-rates" },
   { name: "Violation Trends", href: "/violation-trends" },
+  { name: "Violations Map", href: "/violations-map" },
 ]
 
 export function Header() {

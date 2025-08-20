@@ -4,10 +4,12 @@ import {
   ParkingSign,
   MeterRate,
   ViolationTrend,
+  Violation,
   DataStatus,
   ParkingSignsRequest,
   MeterRateRequest,
   ViolationTrendsRequest,
+  ViolationsRequest,
   ApiError,
 } from './types';
 
@@ -161,6 +163,122 @@ export const api = {
       },
     });
     return response.data;
+  },
+
+  // Individual Violations
+  async getViolations(params: ViolationsRequest): Promise<Violation[]> {
+    const queryParams = {
+      ...(params.lat && { lat: params.lat }),
+      ...(params.lon && { lon: params.lon }),
+      ...(params.radius && { radius: params.radius }),
+      ...(params.borough && { borough: params.borough }),
+      ...(params.violation_type && { violation_type: params.violation_type }),
+      ...(params.start_date && { start_date: params.start_date }),
+      ...(params.end_date && { end_date: params.end_date }),
+      ...(params.limit && { limit: params.limit }),
+      ...(params.offset && { offset: params.offset }),
+    };
+
+    console.log('API Request - Violations params:', queryParams);
+    
+    const response: AxiosResponse<unknown> = await apiClient.get('/violations', {
+      params: queryParams,
+    });
+
+    console.log('API Response - Violations raw data:', response.data);
+
+    // Type guard for API response structure - handle specific backend format
+    interface ApiResponse {
+      results?: {
+        violations?: unknown[];
+        count?: number;
+      };
+      data?: unknown[];
+      violations?: unknown[];
+      error?: string;
+    }
+
+    const raw = response.data as ApiResponse;
+    console.log('API Response - Parsed structure:', raw);
+
+    // Handle error responses
+    if (raw.error) {
+      throw new Error(`API Error: ${raw.error}`);
+    }
+
+    // Extract violations array from the nested structure
+    const list: unknown[] = Array.isArray(raw)
+      ? raw
+      : (raw && raw.results && Array.isArray(raw.results.violations))
+      ? raw.results.violations
+      : (raw && typeof raw === 'object' && Array.isArray(raw.data))
+      ? raw.data
+      : (raw && typeof raw === 'object' && Array.isArray(raw.violations))
+      ? raw.violations
+      : [];
+
+    console.log('API Response - Extracted violations list:', list.length, 'items');
+
+    return list.map((item: unknown, index: number): Violation => {
+      // Type guard for violation item
+      interface ViolationItem {
+        id?: string;
+        violation_id?: string;
+        latitude?: number;
+        lat?: number;
+        longitude?: number;
+        lon?: number;
+        violation_type?: string;
+        violation_code?: string;
+        fine_amount?: number;
+        amount?: number;
+        issue_date?: string;
+        date?: string;
+        vehicle_make?: string;
+        make?: string;
+        vehicle_color?: string;
+        color?: string;
+        street_name?: string;
+        street?: string;
+        house_number?: string;
+        address?: string;
+        intersecting_street?: string;
+        borough?: string;
+        plate_number?: string;
+        plate?: string;
+        plate_type?: string;
+        issuing_agency?: string;
+        agency?: string;
+        violation_status?: string;
+        status?: string;
+        payment_date?: string;
+      }
+      
+      const itemObj = item as ViolationItem;
+      const latitude = Number(itemObj.latitude ?? itemObj.lat ?? 0);
+      const longitude = Number(itemObj.longitude ?? itemObj.lon ?? 0);
+      const fine_amount = Number(itemObj.fine_amount ?? itemObj.amount ?? 0);
+      
+      return {
+        id: String(itemObj.id ?? itemObj.violation_id ?? `${latitude},${longitude},${index}`),
+        latitude,
+        longitude,
+        violation_type: String(itemObj.violation_type ?? itemObj.violation_code ?? 'Unknown'),
+        fine_amount,
+        issue_date: String(itemObj.issue_date ?? itemObj.date ?? ''),
+        vehicle_make: itemObj.vehicle_make ?? itemObj.make,
+        vehicle_color: itemObj.vehicle_color ?? itemObj.color,
+        street_name: itemObj.street_name ?? itemObj.street,
+        house_number: itemObj.house_number ?? itemObj.address,
+        intersecting_street: itemObj.intersecting_street,
+        borough: String(itemObj.borough ?? 'unknown'),
+        plate_number: itemObj.plate_number ?? itemObj.plate,
+        plate_type: itemObj.plate_type,
+        issuing_agency: itemObj.issuing_agency ?? itemObj.agency,
+        violation_status: itemObj.violation_status ?? itemObj.status as 'paid' | 'pending' | 'dismissed' | undefined,
+        payment_date: itemObj.payment_date,
+      } as Violation;
+    });
   },
 
   // Data Status
@@ -320,4 +438,4 @@ export const apiUtils = {
 };
 
 // Export types for easy access
-export type { ApiError, HealthCheck, ParkingSign, MeterRate, ViolationTrend, DataStatus };
+export type { ApiError, HealthCheck, ParkingSign, MeterRate, ViolationTrend, Violation, DataStatus };

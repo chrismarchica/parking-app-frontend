@@ -54,6 +54,26 @@ export interface ViolationTrend {
   percentage_change?: number;
 }
 
+export interface Violation {
+  id: string;
+  latitude: number;
+  longitude: number;
+  violation_type: string;
+  fine_amount: number;
+  issue_date: string;
+  vehicle_make?: string;
+  vehicle_color?: string;
+  street_name?: string;
+  house_number?: string;
+  intersecting_street?: string;
+  borough: string;
+  plate_number?: string;
+  plate_type?: string;
+  issuing_agency?: string;
+  violation_status?: 'paid' | 'pending' | 'dismissed';
+  payment_date?: string;
+}
+
 export interface DataStatus {
   parking_signs: {
     total_count: number;
@@ -91,6 +111,18 @@ export interface ViolationTrendsRequest {
   borough: 'manhattan' | 'brooklyn' | 'queens' | 'bronx' | 'staten_island';
   year: number;
   month?: number;
+}
+
+export interface ViolationsRequest {
+  lat?: number;
+  lon?: number;
+  radius?: number; // in meters
+  borough?: Borough;
+  violation_type?: string;
+  start_date?: string; // YYYY-MM-DD format
+  end_date?: string; // YYYY-MM-DD format
+  limit?: number; // max number of results
+  offset?: number; // for pagination
 }
 
 // UI Component Types
