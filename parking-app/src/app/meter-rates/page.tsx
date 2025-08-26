@@ -99,8 +99,8 @@ function MeterRatesContent() {
   }, [])
 
   // Get status color
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
+  const getStatusColor = (status?: string) => {
+    switch (status?.toLowerCase()) {
       case 'active':
         return 'text-green-600 bg-green-50 border-green-200'
       case 'inactive':
@@ -113,8 +113,8 @@ function MeterRatesContent() {
   }
 
   // Get status icon
-  const getStatusIcon = (status: string) => {
-    switch (status.toLowerCase()) {
+  const getStatusIcon = (status?: string) => {
+    switch (status?.toLowerCase()) {
       case 'active':
         return <CheckCircle className="h-4 w-4" />
       case 'inactive':
@@ -313,7 +313,9 @@ function MeterRatesContent() {
                 </CardTitle>
                 <div className={`flex items-center gap-1 px-2 py-1 rounded-full border text-xs font-medium ${getStatusColor(meterRate.status)}`}>
                   {getStatusIcon(meterRate.status)}
-                  {meterRate.status.charAt(0).toUpperCase() + meterRate.status.slice(1)}
+                  {meterRate.status
+                    ? meterRate.status.charAt(0).toUpperCase() + meterRate.status.slice(1)
+                    : 'Unknown'}
                 </div>
               </div>
             </CardHeader>
