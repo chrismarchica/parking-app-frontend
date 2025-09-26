@@ -1,4 +1,3 @@
-import axios, { AxiosResponse } from 'axios';
 import {
   HealthCheck,
   ParkingSign,
@@ -10,316 +9,129 @@ import {
   MeterRateRequest,
   ViolationTrendsRequest,
   ViolationsRequest,
-  ApiError,
 } from './types';
+import { loadParkingSignsRaw } from './data/parkingSignsProvider';
+import { loadMeterZonesRaw } from './data/meterRatesProvider';
+import { loadViolationTrendsSample } from './data/violationTrendsProvider';
 
-// API Configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
-
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Request interceptor for logging
-apiClient.interceptors.request.use(
-  (config) => {
-    console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    return config;
-  },
-  (error) => {
-    console.error('API Request Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// Response interceptor for error handling
-apiClient.interceptors.response.use(
-  (response) => {
-    console.log(`API Response: ${response.status} ${response.config.url}`);
-    return response;
-  },
-  (error) => {
-    const apiError: ApiError = {
-      message: error.response?.data?.message || error.message || 'An unexpected error occurred',
-      code: error.response?.data?.code || error.code || 'UNKNOWN_ERROR',
-      status: error.response?.status || 500,
-      details: error.response?.data?.details || {},
-    };
-
-    console.error('API Response Error:', apiError);
-    return Promise.reject(apiError);
-  }
-);
-
-// API Functions
+// Client-only API shim (no Python backend)
 export const api = {
-  // Health Check
   async checkHealth(): Promise<HealthCheck> {
-    const response: AxiosResponse<HealthCheck> = await apiClient.get('/health');
-    return response.data;
+    return {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      services: { api: 'online' },
+    } as HealthCheck;
   },
 
-  // Parking Signs
   async getParkingSigns(params: ParkingSignsRequest): Promise<ParkingSign[]> {
-    const response: AxiosResponse<unknown> = await apiClient.get('/parking-signs', {
-      params: {
-        lat: params.lat,
-        lon: params.lon,
-        radius: params.radius,
-      },
-    });
-
-    // Type guard for API response structure
-    interface ApiResponse {
-      results?: unknown[];
-      data?: unknown[];
-      parking_signs?: unknown[];
-      signs?: unknown[];
-    }
-
-    const raw = response.data;
-    const list: unknown[] = Array.isArray(raw)
-      ? raw
-      : (raw && typeof raw === 'object' && Array.isArray((raw as ApiResponse).results))
-      ? (raw as ApiResponse).results!
-      : (raw && typeof raw === 'object' && Array.isArray((raw as ApiResponse).data))
-      ? (raw as ApiResponse).data!
-      : (raw && typeof raw === 'object' && Array.isArray((raw as ApiResponse).parking_signs))
-      ? (raw as ApiResponse).parking_signs!
-      : (raw && typeof raw === 'object' && Array.isArray((raw as ApiResponse).signs))
-      ? (raw as ApiResponse).signs!
-      : [];
-
-    return list.map((item: unknown, index: number): ParkingSign => {
-      // Type guard for parking sign item
-      interface ParkingSignItem {
-        id?: string;
-        sign_id?: string;
-        latitude?: number;
-        lat?: number;
-        longitude?: number;
-        lon?: number;
-        distance?: number;
-        dist?: number;
-        street_name?: string;
-        street?: string;
-        description?: string;
-        sign_type?: string;
-        regulations?: string[];
-        borough?: string;
-        created_at?: string;
-        updated_at?: string;
-      }
-      
-      const itemObj = item as ParkingSignItem;
-      const latitude = Number(itemObj.latitude ?? itemObj.lat);
-      const longitude = Number(itemObj.longitude ?? itemObj.lon);
-      const distance = Number(itemObj.distance ?? itemObj.dist ?? 0);
-      const street_name = String(itemObj.street_name ?? itemObj.street ?? '');
-      const description = String(
-        itemObj.description ??
-        (Array.isArray(itemObj.regulations) ? itemObj.regulations.join(' ') : '') ??
-        ''
-      );
-
-      return {
-        id: String(itemObj.id ?? itemObj.sign_id ?? `${latitude},${longitude},${index}`),
-        latitude,
-        longitude,
-        distance,
-        description,
-        street_name,
-        sign_type: itemObj.sign_type,
-        regulations: Array.isArray(itemObj.regulations) ? itemObj.regulations : undefined,
-        borough: itemObj.borough,
-        created_at: itemObj.created_at,
-        updated_at: itemObj.updated_at,
-      } as ParkingSign;
-    });
+    const raw = await loadParkingSignsRaw();
+    const list = raw
+      .map((s) => ({
+        id: s.sign_id,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        distance: 0,
+        description: s.sign_description,
+        street_name: s.street_name,
+        borough: s.borough?.toLowerCase(),
+      })) as ParkingSign[];
+    // compute distances client-side to preserve existing UI expectations
+    const { filterByRadius } = await import('./utils/geospatial');
+    const filtered = filterByRadius(list, params.lat, params.lon, params.radius);
+    // map back to ParkingSign.distance property name
+    return filtered.map((f) => ({ ...f, distance: f.distance_meters }));
   },
 
-  // Meter Rates
   async getMeterRate(params: MeterRateRequest): Promise<MeterRate> {
-    const response: AxiosResponse<MeterRate> = await apiClient.get('/meter-rate', {
-      params: {
-        lat: params.lat,
-        lon: params.lon,
-      },
-    });
-    return response.data;
+    const raw = await loadMeterZonesRaw();
+    const { calculateDistance } = await import('./utils/geospatial');
+    let best: { item: any; distance: number } | null = null;
+    for (const item of raw) {
+      const d = calculateDistance([params.lat, params.lon], [item.lat, item.long]);
+      if (!best || d < best.distance) best = { item, distance: d };
+    }
+    if (!best) throw new Error('No meter found');
+    const z = best.item;
+    return {
+      id: z.meter_number,
+      latitude: z.lat,
+      longitude: z.long,
+      distance: best.distance,
+      rate_schedule: [{ hours: z.meter_hours, rate: '0', rate_type: 'hourly' }],
+      status: (z.status || 'unknown').toLowerCase() as MeterRate['status'],
+      street_name: z.on_street,
+      borough: z.borough?.toLowerCase(),
+    } as MeterRate;
   },
 
-  // Violation Trends
   async getViolationTrends(params: ViolationTrendsRequest): Promise<ViolationTrend[]> {
-    const response: AxiosResponse<ViolationTrend[]> = await apiClient.get('/violation-trends', {
-      params: {
-        borough: params.borough,
-        year: params.year,
-        ...(params.month && { month: params.month }),
-      },
-    });
-    return response.data;
+    const payload = await loadViolationTrendsSample();
+    // Adapt sample payload to ViolationTrend[]
+    const year = params.year ?? new Date().getFullYear() - 1;
+    return payload.trends.map((t) => ({
+      borough: (params.borough || payload.filters.borough || 'manhattan').toString(),
+      year,
+      violation_type: t.violation_type,
+      count: t.count,
+      total_fines: Math.round(t.count * t.avg_fine),
+      average_fine: t.avg_fine,
+      trend_direction: 'stable',
+    }));
   },
 
-  // Individual Violations
-  async getViolations(params: ViolationsRequest): Promise<Violation[]> {
-    const queryParams = {
-      ...(params.lat && { lat: params.lat }),
-      ...(params.lon && { lon: params.lon }),
-      ...(params.radius && { radius: params.radius }),
-      ...(params.borough && { borough: params.borough }),
-      ...(params.violation_type && { violation_type: params.violation_type }),
-      ...(params.start_date && { start_date: params.start_date }),
-      ...(params.end_date && { end_date: params.end_date }),
-      ...(params.limit && { limit: params.limit }),
-      ...(params.offset && { offset: params.offset }),
-    };
-
-    console.log('API Request - Violations params:', queryParams);
-    
-    const response: AxiosResponse<unknown> = await apiClient.get('/violations', {
-      params: queryParams,
-    });
-
-    console.log('API Response - Violations raw data:', response.data);
-
-    // Type guard for API response structure - handle specific backend format
-    interface ApiResponse {
-      results?: {
-        violations?: unknown[];
-        count?: number;
-      };
-      data?: unknown[];
-      violations?: unknown[];
-      error?: string;
-    }
-
-    const raw = response.data as ApiResponse;
-    console.log('API Response - Parsed structure:', raw);
-
-    // Handle error responses
-    if (raw.error) {
-      throw new Error(`API Error: ${raw.error}`);
-    }
-
-    // Extract violations array from the nested structure
-    const list: unknown[] = Array.isArray(raw)
-      ? raw
-      : (raw && raw.results && Array.isArray(raw.results.violations))
-      ? raw.results.violations
-      : (raw && typeof raw === 'object' && Array.isArray(raw.data))
-      ? raw.data
-      : (raw && typeof raw === 'object' && Array.isArray(raw.violations))
-      ? raw.violations
-      : [];
-
-    console.log('API Response - Extracted violations list:', list.length, 'items');
-
-    return list.map((item: unknown, index: number): Violation => {
-      // Type guard for violation item
-      interface ViolationItem {
-        id?: string;
-        violation_id?: string;
-        latitude?: number;
-        lat?: number;
-        longitude?: number;
-        lon?: number;
-        violation_type?: string;
-        violation_code?: string;
-        fine_amount?: number;
-        amount?: number;
-        issue_date?: string;
-        date?: string;
-        vehicle_make?: string;
-        make?: string;
-        vehicle_color?: string;
-        color?: string;
-        street_name?: string;
-        street?: string;
-        house_number?: string;
-        address?: string;
-        intersecting_street?: string;
-        borough?: string;
-        plate_number?: string;
-        plate?: string;
-        plate_type?: string;
-        issuing_agency?: string;
-        agency?: string;
-        violation_status?: string;
-        status?: string;
-        payment_date?: string;
-      }
-      
-      const itemObj = item as ViolationItem;
-      const latitude = Number(itemObj.latitude ?? itemObj.lat ?? 0);
-      const longitude = Number(itemObj.longitude ?? itemObj.lon ?? 0);
-      const fine_amount = Number(itemObj.fine_amount ?? itemObj.amount ?? 0);
-      
-      return {
-        id: String(itemObj.id ?? itemObj.violation_id ?? `${latitude},${longitude},${index}`),
-        latitude,
-        longitude,
-        violation_type: String(itemObj.violation_type ?? itemObj.violation_code ?? 'Unknown'),
-        fine_amount,
-        issue_date: String(itemObj.issue_date ?? itemObj.date ?? ''),
-        vehicle_make: itemObj.vehicle_make ?? itemObj.make,
-        vehicle_color: itemObj.vehicle_color ?? itemObj.color,
-        street_name: itemObj.street_name ?? itemObj.street,
-        house_number: itemObj.house_number ?? itemObj.address,
-        intersecting_street: itemObj.intersecting_street,
-        borough: String(itemObj.borough ?? 'unknown'),
-        plate_number: itemObj.plate_number ?? itemObj.plate,
-        plate_type: itemObj.plate_type,
-        issuing_agency: itemObj.issuing_agency ?? itemObj.agency,
-        violation_status: itemObj.violation_status ?? itemObj.status as 'paid' | 'pending' | 'dismissed' | undefined,
-        payment_date: itemObj.payment_date,
-      } as Violation;
-    });
+  async getViolations(_params: ViolationsRequest): Promise<Violation[]> {
+    // Not implemented in original backend; return empty for now
+    return [];
   },
 
-  // Data Status
   async getDataStatus(): Promise<DataStatus> {
-    const response: AxiosResponse<DataStatus> = await apiClient.get('/data-status');
-    return response.data;
+    // Compute from static assets
+    const [signs, meters] = await Promise.all([
+      loadParkingSignsRaw().catch(() => []),
+      loadMeterZonesRaw().catch(() => []),
+    ]);
+    const now = new Date().toISOString();
+    return {
+      parking_signs: {
+        total_count: signs.length,
+        last_updated: now,
+        coverage_areas: ['Manhattan', 'Brooklyn', 'Queens', 'Bronx', 'Staten Island'],
+      },
+      meter_rates: {
+        total_count: meters.length,
+        last_updated: now,
+        coverage_areas: ['Manhattan', 'Brooklyn', 'Queens', 'Bronx', 'Staten Island'],
+      },
+      violations: {
+        total_count: 0,
+        last_updated: now,
+        date_range: { start: '2020-01-01', end: now.slice(0, 10) },
+      },
+    } as DataStatus;
   },
 };
 
-// Geocoding API (using a free service)
+// Geocoding API (kept client-side via OSM Nominatim)
 export const geocoding = {
   async searchAddress(address: string): Promise<{ lat: number; lon: number; display_name: string }[]> {
-    try {
-      const response = await axios.get(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          address + ', New York, NY'
-        )}&limit=5&countrycodes=us`
-      );
-      
-      return response.data.map((item: { lat: string; lon: string; display_name: string }) => ({
-        lat: parseFloat(item.lat),
-        lon: parseFloat(item.lon),
-        display_name: item.display_name,
-      }));
-    } catch (error) {
-      console.error('Geocoding error:', error);
-      throw new Error('Failed to geocode address');
-    }
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address + ', New York, NY')}&limit=5&countrycodes=us`
+    );
+    if (!res.ok) throw new Error('Failed to geocode address');
+    const data: { lat: string; lon: string; display_name: string }[] = await res.json();
+    return data.map((item) => ({
+      lat: parseFloat(item.lat),
+      lon: parseFloat(item.lon),
+      display_name: item.display_name,
+    }));
   },
 
   async reverseGeocode(lat: number, lon: number): Promise<string> {
-    try {
-      const response = await axios.get(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
-      );
-      
-      return response.data.display_name || `${lat}, ${lon}`;
-    } catch (error) {
-      console.error('Reverse geocoding error:', error);
-      return `${lat}, ${lon}`;
-    }
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+    if (!res.ok) return `${lat}, ${lon}`;
+    const data = await res.json();
+    return data.display_name || `${lat}, ${lon}`;
   },
 };
 

@@ -204,7 +204,7 @@ export interface MapMarker {
   latitude: number;
   longitude: number;
   type: 'parking_sign' | 'meter' | 'search_center' | 'violation';
-  data?: ParkingSign | MeterRate;
+  data?: ParkingSign | MeterRate | Violation;
   popup?: {
     title: string;
     content: string;
