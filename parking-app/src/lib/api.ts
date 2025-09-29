@@ -14,6 +14,7 @@ import { loadParkingSignsRaw } from './data/parkingSignsProvider';
 import { loadMeterZonesRaw } from './data/meterRatesProvider';
 import { loadViolationTrendsSample } from './data/violationTrendsProvider';
 
+
 // Client-only API shim (no Python backend)
 export const api = {
   async checkHealth(): Promise<HealthCheck> {
@@ -37,18 +38,28 @@ export const api = {
         borough: s.borough?.toLowerCase(),
       })) as ParkingSign[];
     // compute distances client-side to preserve existing UI expectations
-    const { filterByRadius } = await import('./utils/geospatial');
-    const filtered = filterByRadius(list, params.lat, params.lon, params.radius);
+    const filtered = list
+      .map((item) => {
+        const distance_meters = apiUtils.calculateDistance(
+          params.lat,
+          params.lon,
+          item.latitude,
+          item.longitude
+        );
+        return { ...item, distance_meters } as ParkingSign & { distance_meters: number };
+      })
+      .filter((item) => item.distance_meters <= params.radius)
+      .sort((a, b) => a.distance_meters - b.distance_meters);
     // map back to ParkingSign.distance property name
     return filtered.map((f) => ({ ...f, distance: f.distance_meters }));
   },
 
   async getMeterRate(params: MeterRateRequest): Promise<MeterRate> {
     const raw = await loadMeterZonesRaw();
-    const { calculateDistance } = await import('./utils/geospatial');
-    let best: { item: any; distance: number } | null = null;
+    type Best = { item: { meter_number: string; on_street: string; meter_hours: string; borough: string; status: string; lat: number; long: number }; distance: number } | null
+    let best: Best = null;
     for (const item of raw) {
-      const d = calculateDistance([params.lat, params.lon], [item.lat, item.long]);
+      const d = apiUtils.calculateDistance(params.lat, params.lon, item.lat, item.long);
       if (!best || d < best.distance) best = { item, distance: d };
     }
     if (!best) throw new Error('No meter found');
@@ -249,5 +260,5 @@ export const apiUtils = {
   },
 };
 
-// Export types for easy access
-export type { ApiError, HealthCheck, ParkingSign, MeterRate, ViolationTrend, Violation, DataStatus };
+// Re-export types for convenience
+export type { ApiError, HealthCheck, ParkingSign, MeterRate, ViolationTrend, Violation, DataStatus } from './types';

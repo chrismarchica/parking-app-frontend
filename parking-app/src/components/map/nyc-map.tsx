@@ -2,12 +2,11 @@
 
 import * as React from "react"
 import Map, { NavigationControl, GeolocateControl, Marker, Popup, Source, Layer } from "react-map-gl"
-import { api } from "@/lib/api"
-import { Borough } from "@/lib/types"
+import type { LayerProps } from "react-map-gl"
 import { MapPinOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { MapLocation, MapMarker } from "@/lib/types"
+import { MapLocation, MapMarker, Violation } from "@/lib/types"
 import { constants } from "@/lib/utils"
 
 interface NYCMapProps {
@@ -50,8 +49,6 @@ export function NYCMap({
     title?: string
     content?: string
   } | null>(null)
-  const [violationLoading, setViolationLoading] = React.useState(false)
-  const [violationError, setViolationError] = React.useState<string | null>(null)
   const [mapCursor, setMapCursor] = React.useState<string>('')
 
   // Update viewport when center changes
@@ -153,10 +150,20 @@ export function NYCMap({
           if (clusterFeature && clusterFeature.geometry.type === 'Point') {
             const [longitude, latitude] = clusterFeature.geometry.coordinates as [number, number]
             const clusterId = clusterFeature.properties?.cluster_id
-            const source = evt.target.getSource('violations-source')
-            
-            if (source && source.getClusterExpansionZoom && clusterId !== undefined) {
-              source.getClusterExpansionZoom(clusterId, (err: Error | null, zoom: number) => {
+            type ClusterSource = {
+              getClusterExpansionZoom: (
+                clusterId: number,
+                cb: (err: Error | null, zoom: number) => void
+              ) => void
+            }
+            const mapObj = evt.target as unknown as { getSource: (id: string) => unknown }
+            const source = mapObj.getSource('violations-source') as unknown
+            if (
+              source &&
+              typeof (source as ClusterSource).getClusterExpansionZoom === 'function' &&
+              clusterId !== undefined
+            ) {
+              ;(source as ClusterSource).getClusterExpansionZoom(clusterId, (err: Error | null, zoom: number) => {
                 if (err) return
                 
                 setViewport(prev => ({
@@ -293,7 +300,7 @@ export function NYCMap({
         {/* Violation markers rendered as a vector layer with clustering for performance */}
         {(() => {
           const violationMarkers = (markers || [])
-            .filter(m => m.type === 'violation')
+            .filter((m): m is MapMarker & { type: 'violation'; data?: Violation } => m.type === 'violation')
             .filter(m => Number.isFinite(m.latitude) && Number.isFinite(m.longitude))
           if (violationMarkers.length === 0) return null
 
@@ -340,7 +347,7 @@ export function NYCMap({
               'circle-stroke-width': 1.5,
               'circle-opacity': 0.8,
             },
-          }
+          } as unknown as LayerProps
 
           // Cluster layer for grouped violations
           const clusterLayer = {
@@ -368,7 +375,7 @@ export function NYCMap({
               'circle-stroke-width': 2,
               'circle-opacity': 0.8,
             },
-          }
+          } as unknown as LayerProps
 
           // Cluster count labels
           const clusterCountLayer = {
@@ -383,7 +390,7 @@ export function NYCMap({
             paint: {
               'text-color': '#ffffff',
             },
-          }
+          } as unknown as LayerProps
 
           return (
             <Source 
@@ -414,15 +421,7 @@ export function NYCMap({
           >
             <div className="p-2">
               <h4 className="font-semibold text-sm mb-1">{violationPopup.title}</h4>
-              {violationLoading ? (
-                <p className="text-xs text-muted-foreground">Loading...</p>
-              ) : violationError ? (
-                <p className="text-xs text-destructive">{violationError}</p>
-              ) : violationPopup.content ? (
-                <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{violationPopup.content}</pre>
-              ) : (
-                <p className="text-xs text-muted-foreground">No details available</p>
-              )}
+              <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{violationPopup.content || 'No details available'}</pre>
             </div>
           </Popup>
         )}
